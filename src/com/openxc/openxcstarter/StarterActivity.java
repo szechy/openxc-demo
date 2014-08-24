@@ -1,5 +1,10 @@
 package com.openxc.openxcstarter;
 
+import android.animation.Animator;
+import android.animation.Animator.AnimatorListener;
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
+import android.animation.ValueAnimator.AnimatorUpdateListener;
 import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Context;
@@ -9,21 +14,28 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
 import android.view.Menu;
+import android.view.animation.Animation;
+import android.view.animation.RotateAnimation;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import com.openxc.VehicleManager;
+import com.openxc.measurements.FuelLevel;
 import com.openxc.measurements.Measurement;
 import com.openxc.measurements.UnrecognizedMeasurementTypeException;
 import com.openxc.measurements.EngineSpeed;
 import com.openxc.remote.VehicleServiceException;
+
+import de.passsy.holocircularprogressbar.HoloCircularProgressBar;
 
 public class StarterActivity extends Activity {
     private static final String TAG = "StarterActivity";
 
     private VehicleManager mVehicleManager;
     private TextView mEngineSpeedView;
+    private TextView mFuelPercentage;
     private ProgressBar pb;
+    private ObjectAnimator mProgressBarAnimator;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -32,7 +44,11 @@ public class StarterActivity extends Activity {
         // grab a reference to the engine speed text object in the UI, so we can
         // manipulate its value later from Java code
         mEngineSpeedView = (TextView) findViewById(R.id.vehicle_speed);
+        mFuelPercentage = (TextView) findViewById(R.id.fuel_percentage);
         pb = (ProgressBar) findViewById(R.id.circularProgBar);
+        //Animation an = new RotateAnimation(0.0f, 135.0f, 250f, 273f);
+        //an.setFillAfter(true);
+       // pb.startAnimation(an);
     }
 
     @Override
@@ -46,6 +62,7 @@ public class StarterActivity extends Activity {
                 // Remember to remove your listeners, in typical Android
                 // fashion.
                 mVehicleManager.removeListener(EngineSpeed.class, mSpeedListener);
+                mVehicleManager.removeListener(FuelLevel.class, mFuelListener);
             } catch (VehicleServiceException e) {
                 e.printStackTrace();
             }
@@ -85,13 +102,30 @@ public class StarterActivity extends Activity {
                     // UI thread - we set the text of the EngineSpeed view to
                     // the latest value
                     mEngineSpeedView.setText("Engine speed (RPM): "
-                            + speed.getValue().doubleValue());
-                    Animation an = new RotateAnimation(0.0f, 90.0f, 250f, 273f);
-                    an.setFillAfter(true);
-                    pb.startAnimation(an);
+                            + (float)speed.getValue().doubleValue());
+                    pb.setProgress(speed.getValue().intValue());
                 }
             });
         }
+    };
+    
+    FuelLevel.Listener mFuelListener = new FuelLevel.Listener() {
+
+		@Override
+		//After receiving new FuelLevel value, update UI to display new value
+		//Cast pack to FuelLevel, then jump to UI thread to modify UI
+		public void receive(Measurement measurement) {
+			final FuelLevel fuel = (FuelLevel) measurement;
+			
+			StarterActivity.this.runOnUiThread(new Runnable() {
+				public void run() {
+					mFuelPercentage.setText("Fuel percentage is at: " + 
+							(float)fuel.getValue().intValue());
+					//set TextView to latest percentage value
+				}
+			});
+			
+		}
     };
 
     private ServiceConnection mConnection = new ServiceConnection() {
@@ -115,6 +149,16 @@ public class StarterActivity extends Activity {
             } catch (UnrecognizedMeasurementTypeException e) {
                 e.printStackTrace();
             }
+            
+            try {
+            	mVehicleManager.addListener(FuelLevel.class, mFuelListener);
+            }
+            catch (VehicleServiceException e) {
+            	e.printStackTrace();
+            }
+            catch (UnrecognizedMeasurementTypeException e) {
+            	e.printStackTrace();
+            }
         }
 
         // Called when the connection with the service disconnects unexpectedly
@@ -130,4 +174,58 @@ public class StarterActivity extends Activity {
         getMenuInflater().inflate(R.menu.starter, menu);
         return true;
     }
+
+	/**
+	 * Animate.
+	 * 
+	 * @param progressBar
+	 *            the progress bar
+	 * @param listener
+	 *            the listener
+	 */
+	private void animate(final HoloCircularProgressBar progressBar, final AnimatorListener listener) {
+		final float progress = (float) (Math.random() * 2);
+		int duration = 3000;
+		animate(progressBar, listener, progress, duration);
+	}
+	
+	private void animate(final HoloCircularProgressBar progressBar, final AnimatorListener listener,
+			final float progress, final int duration) {
+	
+		mProgressBarAnimator = ObjectAnimator.ofFloat(progressBar, "progress", progress);
+		mProgressBarAnimator.setDuration(duration);
+	
+		mProgressBarAnimator.addListener(new AnimatorListener() {
+	
+			@Override
+			public void onAnimationCancel(final Animator animation) {
+			}
+	
+			@Override
+			public void onAnimationEnd(final Animator animation) {
+				progressBar.setProgress(progress);
+			}
+	
+			@Override
+			public void onAnimationRepeat(final Animator animation) {
+			}
+	
+			@Override
+			public void onAnimationStart(final Animator animation) {
+			}
+		});
+		if (listener != null) {
+			mProgressBarAnimator.addListener(listener);
+		}
+		mProgressBarAnimator.reverse();
+		mProgressBarAnimator.addUpdateListener(new AnimatorUpdateListener() {
+	
+			@Override
+			public void onAnimationUpdate(final ValueAnimator animation) {
+				progressBar.setProgress((Float) animation.getAnimatedValue());
+			}
+		});
+		progressBar.setMarkerProgress(progress);
+		mProgressBarAnimator.start();
+	}
 }
